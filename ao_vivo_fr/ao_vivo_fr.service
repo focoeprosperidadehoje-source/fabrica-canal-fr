@@ -1,0 +1,17 @@
+[Unit]
+Description=Live 24h FR — Force et Protection Divine (Notre-Dame de Lourdes)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ao_vivo_fr
+ExecStart=/root/venv_fr/bin/python3 /root/ao_vivo_fr/ao_vivo_fr.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

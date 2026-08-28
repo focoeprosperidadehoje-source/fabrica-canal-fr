@@ -1,0 +1,111 @@
+name: 🚀 Deploy ao vivo FR
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: 'Mode: deploy | status | rebuild_deps | cleanup_blocos | log | force_vod'
+        default: 'deploy'
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy ao_vivo_fr.py to VPS1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH for VPS1
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_VPS_FR }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Status do serviço (modo status)
+        if: github.event.inputs.modo == 'status'
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 "
+            systemctl is-active ao_vivo_fr
+            journalctl -u ao_vivo_fr -n 20 --no-pager
+            echo '--- FFMPEG SPEED ---'
+            tail -c 2000 /root/ao_vivo_fr/ffmpeg_h.log 2>/dev/null | tr '\r' '\n' | grep -E 'speed=|fps=' | tail -5 || echo 'sem dados'
+            echo '--- BLOCOS ---'
+            ls /root/ao_vivo_fr/blocos/*.mp4 2>/dev/null | wc -l || echo '0 blocos'
+          "
+
+      - name: Rebuild venv_fr (modo rebuild_deps apenas)
+        if: github.event.inputs.modo == 'rebuild_deps'
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 bash << 'ENDSSH'
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            if ! dpkg -l python3.12-venv 2>/dev/null | grep -q "^ii"; then
+              for i in 1 2 3 4 5; do
+                apt-get update -qq && apt-get install -y python3.12-venv python3-pip -qq 2>/dev/null && break
+                sleep 15
+              done
+            fi
+            systemctl stop ao_vivo_fr || true
+            sleep 5
+            kill -9 $(pgrep -f ao_vivo_fr) 2>/dev/null || true
+            sleep 2
+            rm -rf /root/venv_fr 2>/dev/null || true
+            python3 -m venv /root/venv_fr
+            /root/venv_fr/bin/pip install --upgrade pip --quiet
+            /root/venv_fr/bin/pip install --quiet \
+              google-genai google-api-python-client google-auth google-auth-oauthlib \
+              pytz edge-tts pillow numpy
+            /root/venv_fr/bin/python3 -c "from google import genai; print('✅ google-genai OK')"
+            echo "✅ venv_fr recriado com dependências"
+          ENDSSH
+
+      - name: Deploy ao_vivo_fr.py e service file
+        if: github.event.inputs.modo == 'deploy' || github.event.inputs.modo == 'rebuild_deps'
+        run: |
+          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no \
+            ao_vivo_fr/ao_vivo_fr.py \
+            root@80.241.213.27:/root/ao_vivo_fr/ao_vivo_fr.py
+          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no \
+            ao_vivo_fr/ao_vivo_fr.service \
+            root@80.241.213.27:/etc/systemd/system/ao_vivo_fr.service
+
+      - name: Reiniciar serviço
+        if: github.event.inputs.modo == 'deploy' || github.event.inputs.modo == 'rebuild_deps'
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 "
+            systemctl daemon-reload
+            systemctl restart ao_vivo_fr
+            sleep 20
+            STATUS=\$(systemctl is-active ao_vivo_fr)
+            echo \"Service status: \$STATUS\"
+            journalctl -u ao_vivo_fr -n 25 --no-pager
+            if [ \"\$STATUS\" = 'active' ] || [ \"\$STATUS\" = 'activating' ]; then
+              echo DEPLOY_OK
+            else
+              echo DEPLOY_FAILED
+              exit 1
+            fi
+          "
+
+      - name: Limpeza de blocos (modo cleanup_blocos)
+        if: github.event.inputs.modo == 'cleanup_blocos'
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 "
+            echo '--- ANTES ---'
+            ls /root/ao_vivo_fr/blocos/*.mp4 2>/dev/null | wc -l
+            echo '--- REINICIANDO ao_vivo_fr ---'
+            systemctl restart ao_vivo_fr
+            sleep 10
+            systemctl is-active ao_vivo_fr
+            journalctl -u ao_vivo_fr -n 15 --no-pager
+          "
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key

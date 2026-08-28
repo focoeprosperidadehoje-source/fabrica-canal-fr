@@ -1,0 +1,48 @@
+name: 2. Prensa Longos (Matrix FR)
+
+on:
+  schedule:
+    - cron: '30 8 * * *'   # 09:30 Paris time (UTC+1) ou 10:30 (UTC+2 verão)
+    - cron: '30 9 * * *'
+    - cron: '30 20 * * *'  # 21:30 Paris / 22:30 verão
+    - cron: '30 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  renderizar_e_publicar:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        horario:
+          - '18:00'
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3'
+      - name: Cache ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/ffmpeg
+          key: ffmpeg-static-linux64-n7
+      - name: Install ffmpeg (static binary)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          wget -q -O /tmp/ffmpeg.tar.xz \
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+          tar -xf /tmp/ffmpeg.tar.xz --strip-components=2 -C /tmp --wildcards '*/bin/ffmpeg'
+          sudo mv /tmp/ffmpeg /usr/local/bin/ffmpeg
+          sudo chmod +x /usr/local/bin/ffmpeg
+      - run: wget -q -O Anton.ttf https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf
+      - run: pip install --upgrade google-api-python-client google-auth-oauthlib google-auth-httplib2 Pillow gspread pytz edge-tts numpy
+      - env:
+          GOOGLE_CREDENTIALS_FR: ${{ secrets.GOOGLE_CREDENTIALS_FR }}
+          YOUTUBE_TOKEN_FR: ${{ secrets.YOUTUBE_TOKEN_FR }}
+          HORARIO_ALVO: ${{ matrix.horario }}
+        run: python publicador.py

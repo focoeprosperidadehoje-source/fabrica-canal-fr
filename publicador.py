@@ -1,0 +1,337 @@
+import os, random, re, datetime, time, subprocess, pytz, json, gspread
+from google.oauth2.service_account import Credentials
+from google.oauth2.credentials import Credentials as YTCredentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.auth.transport.requests import Request
+from PIL import Image, ImageDraw, ImageFont
+import textwrap
+from googleapiclient.discovery import build as build_drive
+
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+GOOGLE_JSON = os.environ.get("GOOGLE_CREDENTIALS_FR")
+YT_TOKEN_JSON = os.environ.get("YOUTUBE_TOKEN_FR")
+HORARIO_ALVO = os.environ.get("HORARIO_ALVO")
+
+print(f"🚀 DÉMARRAGE MATRIX SERVER FR POUR: {HORARIO_ALVO}")
+
+credenciais_dict = json.loads(GOOGLE_JSON)
+creds_sheets = Credentials.from_service_account_info(credenciais_dict, scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
+gc = gspread.authorize(creds_sheets)
+
+aba_principal = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").worksheet("FR")
+try: configs = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").worksheet("Configuracoes").get_all_records()
+except: configs = []
+
+creds_yt = YTCredentials.from_authorized_user_info(json.loads(YT_TOKEN_JSON))
+if creds_yt and creds_yt.expired and creds_yt.refresh_token: creds_yt.refresh(Request())
+youtube = build('youtube', 'v3', credentials=creds_yt)
+drive_service = build_drive('drive', 'v3', credentials=creds_sheets)
+
+PASTA_TEMP = "/tmp/fabrica_fr"
+os.makedirs(PASTA_TEMP, exist_ok=True)
+
+def _gerar_overlay_particulas(saida, largura=1920, altura=1080, duracao_s=20, fps=30):
+    if os.path.exists(saida):
+        return saida
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    n_frames = duracao_s * fps; n = 400
+    rng = np.random.default_rng(42)
+    px = rng.uniform(0, largura, n).astype(np.float32); py = rng.uniform(0, altura, n).astype(np.float32)
+    vx = rng.uniform(-0.4, 0.4, n).astype(np.float32); vy = (rng.uniform(35, 55, n) / fps).astype(np.float32)
+    age = rng.uniform(0, 80, n).astype(np.float32); life = rng.uniform(60, 130, n).astype(np.float32)
+    CORES = np.array([[255,215,0],[255,200,0],[255,230,110],[255,180,0],[255,245,160]], dtype=np.float32)
+    cor_idx = rng.integers(0, len(CORES), n)
+    tmp = saida + ".ptmp.mp4"
+    proc = subprocess.Popen(['ffmpeg','-y','-f','rawvideo','-vcodec','rawvideo','-s',f'{largura}x{altura}',
+        '-pix_fmt','rgb24','-r',str(fps),'-i','pipe:0','-c:v','libx264','-preset','fast','-crf','25',
+        '-pix_fmt','yuv420p','-an',tmp], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(n_frames):
+            frame = np.zeros((altura, largura, 3), dtype=np.uint8)
+            py -= vy; px += vx; age += 1.0
+            mortas = (age >= life) | (py < -10)
+            if mortas.any():
+                m = int(mortas.sum())
+                px[mortas] = rng.uniform(0, largura, m).astype(np.float32)
+                py[mortas] = (altura + rng.uniform(0, 40, m)).astype(np.float32)
+                age[mortas] = 0.0; life[mortas] = rng.uniform(60, 130, m).astype(np.float32)
+                vy[mortas] = (rng.uniform(35, 55, m) / fps).astype(np.float32)
+                vx[mortas] = rng.uniform(-0.4, 0.4, m).astype(np.float32)
+                cor_idx[mortas] = rng.integers(0, len(CORES), m)
+            px %= largura
+            t = np.clip(age / life, 0.0, 1.0); fade = (np.sin(np.pi * t) * 0.90).astype(np.float32)
+            xi = np.clip(px.astype(np.int32), 0, largura-1); yi = np.clip(py.astype(np.int32), 0, altura-1)
+            cores = (CORES[cor_idx] * fade[:, np.newaxis]).astype(np.uint8)
+            for dy, dx in [(0,0),(0,1),(0,-1),(1,0),(-1,0),(1,1),(-1,-1),(1,-1),(-1,1)]:
+                att = np.float32(1.0 if (dx==0 and dy==0) else 0.6)
+                yy = np.clip(yi+dy, 0, altura-1); xx = np.clip(xi+dx, 0, largura-1)
+                np.maximum.at(frame, (yy, xx), (cores.astype(np.float32)*att).clip(0,255).astype(np.uint8))
+            proc.stdin.write(frame.tobytes())
+        proc.stdin.close(); proc.wait()
+        if proc.returncode != 0: raise RuntimeError("FFmpeg particules échoué")
+        os.rename(tmp, saida); return saida
+    except Exception as e:
+        try: proc.stdin.close()
+        except: pass
+        proc.kill()
+        if os.path.exists(tmp): os.remove(tmp)
+        print(f"[WARN] Particules: {e}"); return None
+
+_PARTICLES_PATH = _gerar_overlay_particulas(f"{PASTA_TEMP}/particles_loop.mp4")
+
+# Shared asset folders (same Drive as other channels)
+ID_PASTA_MARIA = "1IyWdkNqdKQn8kDX-EWSEjKqOLNPEg6jk"       # Maria Universal (horizontal)
+ID_PASTA_BROLLS = "1mY-ISStykefXFfLdyxKkci3_KpL0bS1z"
+ID_PASTA_MUSICAS = "1gxZA1TlQPzuf737XOo_n8blfOThnddgm"
+ID_PASTA_AVE_MARIA = "1VPmJ5JHXZ6ky0yRwVgqLmRZrl3HhtK3u"
+ID_PASTA_SFX = "1CxSDrCzVatG0bZwTVIN6yDKLO7umIgaX"
+ID_PASTA_THUMB_MARIA = "1C04BHKkhGcxv1NRxxrmlDkmIdTO__S4k"
+
+ID_PLAYLIST_MARIA_NOITE = "PLCKFHOkKiqGg"  # Notre-Dame de Lourdes
+
+def baixar_arquivo(file_id, destino):
+    for tentativa in range(4):
+        try:
+            request = drive_service.files().get_media(fileId=file_id)
+            with open(destino, 'wb') as f: f.write(request.execute())
+            return destino
+        except Exception as e:
+            print(f"   ⚠️ Drive échoué. Nouvelle tentative... ({tentativa+1}/4)")
+            time.sleep(5)
+    raise Exception(f"Échec définitif du téléchargement {file_id}")
+
+def listar_arquivos(folder_id, extensoes=None):
+    res = []; page_token = None
+    while True:
+        for tentativa in range(4):
+            try:
+                response = drive_service.files().list(q=f"'{folder_id}' in parents and trashed=false", spaces='drive', fields='nextPageToken, files(id, name)', pageToken=page_token).execute()
+                break
+            except Exception as e:
+                print(f"   ⚠️ Erreur dossier {folder_id}. Nouvelle tentative... ({tentativa+1}/4)")
+                time.sleep(5)
+        else:
+            return res
+        for f in response.get('files', []):
+            if extensoes:
+                if f['name'].lower().endswith(extensoes): res.append(f)
+            else: res.append(f)
+        page_token = response.get('nextPageToken', None)
+        if not page_token: break
+    return res
+
+def obter_duracao(arquivo):
+    try: return float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', arquivo], capture_output=True, text=True).stdout.strip())
+    except: return 600
+
+def filtro_broll(nome, horario):
+    n = nome.lower()
+    if "06:00" in horario: return any(x in n for x in ["dia", "velas"])
+    elif "18:00" in horario: return any(x in n for x in ["velas", "flores", "noite", "cosmos"])
+    return True
+
+def formatar_vtt(caminho_vtt):
+    if not os.path.exists(caminho_vtt): return
+    with open(caminho_vtt, 'r', encoding='utf-8') as f: linhas = f.readlines()
+    with open(caminho_vtt, 'w', encoding='utf-8') as f:
+        for l in linhas:
+            if '-->' in l or l.strip() == '' or l.startswith('WEBVTT'): f.write(l)
+            else: f.write(textwrap.fill(l.strip(), width=40) + '\n')
+
+def format_time(seconds):
+    return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
+
+def criar_thumbnail(img_path, texto_curto, horario, persona, caminho_saida):
+    img = Image.open(img_path).convert("RGBA")
+    img_ratio = img.width / img.height
+    if img_ratio > 1920/1080:
+        nw = int(img.height * (1920/1080)); off = (img.width - nw) / 2
+        img = img.crop((off, 0, img.width - off, img.height))
+    else:
+        nh = int(img.width / (1920/1080)); off = (img.height - nh) / 2
+        img = img.crop((0, off, img.width, img.height - off))
+    img = img.resize((1920, 1080)).convert("RGB")
+    draw = ImageDraw.Draw(img)
+    # French flag colors: blue morning, red evening
+    cor_barra = "#002395" if "06:00" in horario else "#ED2939"
+    draw.rectangle([(0, 0), (120, 1080)], fill=cor_barra)
+    texto = texto_curto.upper()
+    font_size = 350
+    while font_size > 50:
+        try: font = ImageFont.truetype("Anton.ttf", font_size)
+        except: break
+        linhas = textwrap.wrap(texto, width=12, break_long_words=False)[:3]
+        max_w = max([draw.textlength(l, font=font) for l in linhas] + [0])
+        if max_w <= 820: break
+        font_size -= 5
+    y_text = (1080 - (len(linhas) * font_size * 1.1)) / 2
+    cores = ["white", "#FFD700", "white"]
+    for i, linha in enumerate(linhas):
+        w = draw.textlength(linha, font=font)
+        x_text = 960 + ((960 - w) / 2)
+        draw.text((x_text, y_text), linha, font=font, fill=cores[i % len(cores)], stroke_width=15, stroke_fill="black")
+        y_text += font_size * 1.1
+    img.save(caminho_saida)
+    return caminho_saida
+
+dados = aba_principal.get_all_records()
+col_status = aba_principal.row_values(1).index('Status') + 1
+
+for index, linha in enumerate(dados, start=2):
+    if str(linha.get('Status', '')).strip() == 'Ready for Audio' and str(linha.get('Idioma', '')).strip().upper() == 'FR' and str(linha.get('Horario', '')).strip() == HORARIO_ALVO:
+        data_str = str(linha.get('Data', ''))
+        horario_str = str(linha.get('Horario', ''))
+        titulo = str(linha.get('Titulo', ''))
+        descricao_ia = str(linha.get('Descricao', ''))
+        tags_str = str(linha.get('Tags', ''))
+        persona = str(linha.get('Personagem', '')).upper()
+        roteiro = str(linha.get('Roteiro', ''))
+        texto_thumb = str(linha.get('Texto_Thumb', linha.get('Texto Thumb', ''))).strip() or " ".join(titulo.split()[:3])
+
+        print(f"🎬 DÉMARRAGE: Ligne {index} - {persona} à {horario_str}")
+
+        # FR only has Maria content
+        id_pasta_img = ID_PASTA_MARIA
+        id_pasta_thumb = ID_PASTA_THUMB_MARIA
+        voz_escolhida = "fr-FR-DeniseNeural"
+
+        print("   📥 Téléchargement des images et B-rolls...")
+        arquivos_img = listar_arquivos(id_pasta_img, ('.jpg', '.jpeg', '.png'))
+        if not arquivos_img: continue
+
+        random.shuffle(arquivos_img)
+        imgs_locais = [baixar_arquivo(arquivos_img[i]['id'], f"{PASTA_TEMP}/img_{i}.jpg") for i in range(min(45, len(arquivos_img)))]
+
+        arquivos_thumb = listar_arquivos(id_pasta_thumb, ('.jpg', '.jpeg', '.png'))
+        if not arquivos_thumb: continue
+        thumb_base_local = baixar_arquivo(random.choice(arquivos_thumb)['id'], f"{PASTA_TEMP}/thumb_base.jpg")
+
+        id_pasta_musica = ID_PASTA_AVE_MARIA if "18:00" in horario_str else ID_PASTA_MUSICAS
+        arquivos_musica = listar_arquivos(id_pasta_musica, ('.mp3', '.wav'))
+        musica_local = baixar_arquivo(random.choice(arquivos_musica)['id'], f"{PASTA_TEMP}/musica.mp3")
+
+        arquivos_sfx = listar_arquivos(ID_PASTA_SFX, ('.mp3', '.wav'))
+        sfx_file = next((f for f in arquivos_sfx if ("passaro" in f['name'].lower() if "06:00" in horario_str else "vento" in f['name'].lower())), None)
+        sfx_local = baixar_arquivo(sfx_file['id'], f"{PASTA_TEMP}/sfx.mp3") if sfx_file else None
+
+        brolls_validos = [f for f in listar_arquivos(ID_PASTA_BROLLS, ('.mp4', '.mov')) if filtro_broll(f['name'], horario_str)]
+        random.shuffle(brolls_validos)
+        brolls_locais = [baixar_arquivo(brolls_validos[i]['id'], f"{PASTA_TEMP}/broll_{i}.mp4") for i in range(min(15, len(brolls_validos)))]
+
+        caminho_mp3 = f"{PASTA_TEMP}/audio.mp3"
+        caminho_vtt = f"{PASTA_TEMP}/legenda.vtt"
+        caminho_txt = f"{PASTA_TEMP}/roteiro.txt"
+        with open(caminho_txt, "w", encoding="utf-8") as f: f.write(roteiro.replace('*', '').replace('_', '').replace('"', ''))
+
+        velocidade_voz = random.randint(15, 20)
+        param_rate = f"--rate=-{velocidade_voz}%"
+        print(f"   🎙️ Génération voix neurale ({voz_escolhida} à {param_rate})...")
+        subprocess.run(["edge-tts", "--voice", voz_escolhida, param_rate, "--pitch=-10Hz", "--file", caminho_txt, "--write-media", caminho_mp3, "--write-subtitles", caminho_vtt], capture_output=True)
+        formatar_vtt(caminho_vtt)
+        duracao_audio = obter_duracao(caminho_mp3)
+
+        tem_extensao = horario_str == "18:00"
+        duracao_total = duracao_audio + 300 if tem_extensao else duracao_audio
+
+        print("   🎞️ Construction des blocs visuels...")
+        tempo_acumulado = 0; lista_ts = []; contador_chunk = 0
+        baralho_imgs_uso = imgs_locais.copy(); baralho_brolls_uso = brolls_locais.copy()
+        random.shuffle(baralho_imgs_uso); random.shuffle(baralho_brolls_uso)
+
+        while tempo_acumulado < duracao_total:
+            arquivo_ts = f"{PASTA_TEMP}/chunk_{contador_chunk}.ts"
+            duracao_padrao = random.randint(8, 10)
+            if tempo_acumulado >= duracao_audio:
+                if not baralho_brolls_uso: baralho_brolls_uso = brolls_locais.copy(); random.shuffle(baralho_brolls_uso)
+                ativo = baralho_brolls_uso.pop() if brolls_locais else imgs_locais[0]
+                duracao_real = min(duracao_padrao, obter_duracao(ativo)) if ativo.endswith('.mp4') else duracao_padrao
+                if _PARTICLES_PATH:
+                    subprocess.run(f'ffmpeg -y -i "{ativo}" -stream_loop -1 -i "{_PARTICLES_PATH}" -t {duracao_real} -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,colorchannelmixer=rr=0.6:gg=0.6:bb=0.6[base];[base][1:v]blend=all_mode=screen:all_opacity=0.30[v]" -map "[v]" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -r 24 -an "{arquivo_ts}"', shell=True, capture_output=True)
+                else:
+                    subprocess.run(f'ffmpeg -y -i "{ativo}" -t {duracao_real} -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,colorchannelmixer=rr=0.6:gg=0.6:bb=0.6" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -r 24 -an "{arquivo_ts}"', shell=True, capture_output=True)
+                tempo_acumulado += duracao_real
+            else:
+                if contador_chunk > 0 and brolls_locais and random.random() < 0.30:
+                    if not baralho_brolls_uso: baralho_brolls_uso = brolls_locais.copy(); random.shuffle(baralho_brolls_uso)
+                    ativo = baralho_brolls_uso.pop()
+                    duracao_real = min(duracao_padrao, obter_duracao(ativo))
+                    if _PARTICLES_PATH:
+                        subprocess.run(f'ffmpeg -y -i "{ativo}" -stream_loop -1 -i "{_PARTICLES_PATH}" -t {duracao_real} -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[base];[base][1:v]blend=all_mode=screen:all_opacity=0.30[v]" -map "[v]" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -r 24 -an "{arquivo_ts}"', shell=True, capture_output=True)
+                    else:
+                        subprocess.run(f'ffmpeg -y -i "{ativo}" -t {duracao_real} -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -r 24 -an "{arquivo_ts}"', shell=True, capture_output=True)
+                    tempo_acumulado += duracao_real
+                else:
+                    if not baralho_imgs_uso: baralho_imgs_uso = imgs_locais.copy(); random.shuffle(baralho_imgs_uso)
+                    ativo = baralho_imgs_uso.pop()
+                    efeito_zoom = random.choice(['in', 'out'])
+                    zoom_cmd = "zoompan=z='1.0+0.0006*on':d=400:x='iw/2-(iw/zoom)/2':y='ih/2-(ih/zoom)/2':s=1920x1080:fps=24" if efeito_zoom == 'in' else "zoompan=z='1.15-0.0006*on':d=400:x='iw/2-(iw/zoom)/2':y='ih/2-(ih/zoom)/2':s=1920x1080:fps=24"
+                    if _PARTICLES_PATH:
+                        subprocess.run(f'ffmpeg -y -loop 1 -framerate 24 -i "{ativo}" -stream_loop -1 -i "{_PARTICLES_PATH}" -t {duracao_padrao} -filter_complex "[0:v]scale=3840:2160:force_original_aspect_ratio=increase,crop=3840:2160,{zoom_cmd}[base];[base][1:v]blend=all_mode=screen:all_opacity=0.30[v]" -map "[v]" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -an "{arquivo_ts}"', shell=True, capture_output=True)
+                    else:
+                        subprocess.run(f'ffmpeg -y -loop 1 -framerate 24 -i "{ativo}" -t {duracao_padrao} -vf "scale=3840:2160:force_original_aspect_ratio=increase,crop=3840:2160,{zoom_cmd}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -an "{arquivo_ts}"', shell=True, capture_output=True)
+                    tempo_acumulado += duracao_padrao
+            lista_ts.append(arquivo_ts); contador_chunk += 1
+
+        print("   🔥 Mixage audio et finalisation vidéo...")
+        arquivo_concat = f"{PASTA_TEMP}/concat.txt"
+        with open(arquivo_concat, "w") as f:
+            for ts in lista_ts: f.write(f"file '{ts}'\n")
+        video_mudo = f"{PASTA_TEMP}/mudo.mp4"
+        subprocess.run(f'ffmpeg -y -f concat -safe 0 -i "{arquivo_concat}" -c copy "{video_mudo}"', shell=True, capture_output=True)
+
+        video_final = f"{PASTA_TEMP}/final.mp4"
+        if sfx_local:
+            subprocess.run(f'ffmpeg -y -i "{video_mudo}" -i "{caminho_mp3}" -stream_loop -1 -i "{musica_local}" -stream_loop -1 -i "{sfx_local}" -filter_complex "[1:a]apad[v_pad];[2:a]volume=\'if(lt(t,{duracao_audio}),0.10,0.25)\':eval=frame[bgm];[3:a]volume=\'if(lt(t,{duracao_audio}),0.15,0.25)\':eval=frame[sfx];[v_pad][bgm][sfx]amix=inputs=3:duration=longest[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k -t {duracao_total} "{video_final}"', shell=True, capture_output=True)
+        else:
+            subprocess.run(f'ffmpeg -y -i "{video_mudo}" -i "{caminho_mp3}" -stream_loop -1 -i "{musica_local}" -filter_complex "[1:a]apad[v_pad];[2:a]volume=\'if(lt(t,{duracao_audio}),0.10,0.25)\':eval=frame[bgm];[v_pad][bgm]amix=inputs=2:duration=longest[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k -t {duracao_total} "{video_final}"', shell=True, capture_output=True)
+
+        thumb_path = criar_thumbnail(thumb_base_local, texto_thumb, horario_str, persona, f"{PASTA_TEMP}/thumb.jpg")
+
+        tags_limpas = re.sub(r'[^a-zA-ZÀ-ÿ0-9 ,]', '', tags_str)
+        tags_lista = [t.strip()[:30] for t in tags_limpas.split(',') if t.strip()][:15]
+
+        capitulos = f"\n\n⏱️ Chapitres de la prière:\n{format_time(0)} Début de la prière\n{format_time(duracao_audio * 0.33)} Supplication et foi\n{format_time(duracao_audio * 0.66)} Abandon et gratitude"
+        if tem_extensao: capitulos += f"\n{format_time(duracao_audio)} Méditation et paix profonde"
+
+        bloco_live = "\n\n🔴 EN DIRECT — 24H AVEC NOTRE-DAME\nNous diffusons en continu 24h/24. Vos suppliques et intentions de prière sont mentionnées dans une prière incessante. Rejoignez-nous maintenant! 👉 https://youtube.com/channel/UC7dZrYzY22dO-h6RfRN1bsw/live"
+
+        try:
+            tz_paris = pytz.timezone('Europe/Paris')
+            data_hora_alvo = tz_paris.localize(datetime.datetime.strptime(f"{data_str} {horario_str}", "%Y-%m-%d %H:%M"))
+            agora_paris = datetime.datetime.now(tz_paris)
+            publish_at = data_hora_alvo.isoformat() if data_hora_alvo > agora_paris else None
+        except: publish_at = None
+
+        body = {
+            "snippet": {"title": titulo[:100], "description": f"{descricao_ia}{capitulos}{bloco_live}", "tags": tags_lista, "categoryId": "22", "defaultLanguage": "fr-FR", "defaultAudioLanguage": "fr-FR"},
+            "status": {"privacyStatus": "private" if publish_at else "public", "selfDeclaredMadeForKids": False, "selfDeclaredMadeWithAlteredContent": True}
+        }
+        if publish_at: body["status"]["publishAt"] = publish_at
+
+        for tentativa in range(3):
+            try:
+                video_id = youtube.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(video_final, chunksize=-1, resumable=True, mimetype="video/mp4")).execute().get("id")
+                print(f"   🎉 SUCCÈS! Vidéo {video_id} publiée.")
+                try:
+                    if os.path.exists(thumb_path): youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(thumb_path)).execute()
+                except Exception as e: print(f"   ⚠️ Avertissement: miniature non chargée: {e}")
+                try:
+                    if os.path.exists(caminho_vtt): youtube.captions().insert(part="snippet", body={"snippet": {"videoId": video_id, "language": "fr-FR", "name": "Français", "isDraft": False}}, media_body=MediaFileUpload(caminho_vtt)).execute()
+                except Exception as e: print(f"   ⚠️ Avertissement: sous-titres non chargés: {e}")
+                try:
+                    pid = ID_PLAYLIST_MARIA_NOITE
+                    if pid and not pid.startswith("PLACEHOLDER"): youtube.playlistItems().insert(part="snippet", body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": video_id}}}).execute()
+                except Exception as e: print(f"   ⚠️ Avertissement: playlist non mise à jour: {e}")
+                aba_principal.update_cell(index, col_status, 'Published')
+                break
+            except Exception as e:
+                print(f"   ❌ Erreur YouTube (Tentative {tentativa+1}/3): {e}")
+                time.sleep(15)
+        break
+
+print("\n🚀 MATRIX SERVER FR ARRÊTÉ.")
