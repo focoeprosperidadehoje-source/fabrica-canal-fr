@@ -33,40 +33,42 @@ jobs:
           echo "Credenciais escritas no .env FR"
           ENDSSH
 
-      - name: Gerar URL de autorizacao OAuth
+      - name: Gerar URL OAuth sem PKCE
         run: |
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 "/root/venv_fr/bin/python3 -" << 'PYEOF'
-          import os, sys
-          sys.path.insert(0, '/root/venv_fr/lib/python3.12/site-packages')
+          import os, sys, urllib.parse, secrets
           with open('/root/ao_vivo_fr/.env') as f:
               for line in f:
                   line = line.strip()
                   if '=' in line and not line.startswith('#'):
                       k, v = line.split('=', 1)
                       os.environ.setdefault(k, v)
-          CLIENT_ID     = os.environ.get('YT_CLIENT_ID', '')
-          CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET', '')
-          if not CLIENT_ID or not CLIENT_SECRET:
-              print("ERRO: credenciais ausentes no .env FR")
-              sys.exit(1)
-          from google_auth_oauthlib.flow import InstalledAppFlow
-          cfg = {"installed": {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
-              "redirect_uris": ["http://localhost"],
-              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-              "token_uri": "https://oauth2.googleapis.com/token"}}
-          flow = InstalledAppFlow.from_client_config(cfg, ["https://www.googleapis.com/auth/youtube"])
-          flow.redirect_uri = "http://localhost"
-          url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+          CLIENT_ID = os.environ.get('YT_CLIENT_ID', '')
+          if not CLIENT_ID:
+              print("ERRO: YT_CLIENT_ID ausente"); sys.exit(1)
+          state = secrets.token_urlsafe(16)
+          with open('/root/ao_vivo_fr/.oauth_state', 'w') as f:
+              f.write(state)
+          params = {
+              'client_id': CLIENT_ID,
+              'redirect_uri': 'http://localhost',
+              'response_type': 'code',
+              'scope': 'https://www.googleapis.com/auth/youtube',
+              'access_type': 'offline',
+              'prompt': 'consent',
+              'state': state,
+          }
+          url = 'https://accounts.google.com/o/oauth2/auth?' + urllib.parse.urlencode(params)
           print()
           print("=" * 60)
           print("CANAL FR - URL DE AUTORIZACAO OAUTH")
           print("=" * 60)
           print(url)
           print("=" * 60)
-          print("1. Copie a URL acima e abra no navegador")
-          print("2. Login com: canalinteligenciadivinafrance@gmail.com")
-          print("3. Autorize — o browser vai abrir localhost e dar erro (normal)")
-          print("4. Copie o codigo 'code=XXX' da BARRA DE ENDERECO do browser")
+          print("1. Copie a URL e abra no navegador")
+          print("2. Login: canalinteligenciadivinafrance@gmail.com")
+          print("3. Autorize — browser vai para localhost e da erro (normal)")
+          print("4. Copie o valor de 'code=...' da barra de endereco")
           print("5. Execute workflow 'Salvar Token FR' com esse codigo")
           print("=" * 60)
           PYEOF

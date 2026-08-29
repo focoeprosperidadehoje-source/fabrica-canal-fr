@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       auth_code:
-        description: 'Codigo OAuth do Google (da tela de autorizacao)'
+        description: 'Codigo OAuth (valor de code= da barra de endereco)'
         required: true
 
 jobs:
@@ -23,15 +23,14 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Trocar codigo por token OAuth e salvar no VPS1
+      - name: Trocar codigo por token e salvar no VPS1
         env:
           AUTH_CODE: ${{ github.event.inputs.auth_code }}
         run: |
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
             AUTH_CODE="$AUTH_CODE" "/root/venv_fr/bin/python3 -" << 'PYEOF'
-          import os, sys
+          import os, sys, json, requests
           from pathlib import Path
-          sys.path.insert(0, '/root/venv_fr/lib/python3.12/site-packages')
           with open('/root/ao_vivo_fr/.env') as f:
               for line in f:
                   line = line.strip()
@@ -42,19 +41,31 @@ jobs:
           CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET', '')
           AUTH_CODE     = os.environ.get('AUTH_CODE', '').strip()
           if not CLIENT_ID or not CLIENT_SECRET:
-              print("ERRO: credenciais ausentes no .env FR"); sys.exit(1)
+              print("ERRO: credenciais ausentes"); sys.exit(1)
           if not AUTH_CODE:
               print("ERRO: AUTH_CODE nao recebido"); sys.exit(1)
-          from google_auth_oauthlib.flow import InstalledAppFlow
-          cfg = {"installed": {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
-              "redirect_uris": ["http://localhost"],
-              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-              "token_uri": "https://oauth2.googleapis.com/token"}}
-          flow = InstalledAppFlow.from_client_config(cfg, ["https://www.googleapis.com/auth/youtube"])
-          flow.redirect_uri = "http://localhost"
-          flow.fetch_token(code=AUTH_CODE)
-          creds = flow.credentials
-          Path('/root/ao_vivo_fr/youtube_token.json').write_text(creds.to_json())
+          resp = requests.post('https://oauth2.googleapis.com/token', data={
+              'code': AUTH_CODE,
+              'client_id': CLIENT_ID,
+              'client_secret': CLIENT_SECRET,
+              'redirect_uri': 'http://localhost',
+              'grant_type': 'authorization_code',
+          })
+          if not resp.ok:
+              print("ERRO ao trocar token:", resp.text); sys.exit(1)
+          t = resp.json()
+          creds = {
+              "token": t.get("access_token", ""),
+              "refresh_token": t.get("refresh_token", ""),
+              "token_uri": "https://oauth2.googleapis.com/token",
+              "client_id": CLIENT_ID,
+              "client_secret": CLIENT_SECRET,
+              "scopes": ["https://www.googleapis.com/auth/youtube"],
+              "universe_domain": "googleapis.com",
+              "account": "",
+              "expiry": None,
+          }
+          Path('/root/ao_vivo_fr/youtube_token.json').write_text(json.dumps(creds))
           print("Token salvo em /root/ao_vivo_fr/youtube_token.json")
           PYEOF
 
