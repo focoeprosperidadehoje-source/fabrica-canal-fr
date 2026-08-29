@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       auth_code:
-        description: 'Codigo OAuth (code= da barra de endereco). Deixe em branco para so exportar secret se token ja existe no VPS.'
+        description: 'Codigo OAuth (code= da barra de endereco). Deixe em branco se token ja existe no VPS.'
         required: false
 
 jobs:
@@ -12,9 +12,6 @@ jobs:
     name: Troca o codigo por token e salva no VPS1
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      secrets: write
 
     steps:
       - name: Configure SSH for VPS1
@@ -48,6 +45,9 @@ jobs:
               print("ERRO: credenciais ausentes no .env FR"); sys.exit(1)
           if TOKEN_PATH.exists() and not AUTH_CODE:
               print("Token ja existe no VPS1 — pulando troca de codigo")
+              import json as _j
+              t = _j.loads(TOKEN_PATH.read_text())
+              print("refresh_token presente:", bool(t.get('refresh_token')))
           elif not AUTH_CODE:
               print("ERRO: AUTH_CODE nao recebido e token nao existe"); sys.exit(1)
           else:
@@ -74,17 +74,8 @@ jobs:
               }
               TOKEN_PATH.write_text(json.dumps(creds))
               print("Token salvo em", TOKEN_PATH)
+              print("refresh_token presente:", bool(t.get('refresh_token')))
           PYEOF
-
-      - name: Exportar token como secret YOUTUBE_TOKEN_FR
-        run: |
-          TOKEN_JSON=$(ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
-            "cat /root/ao_vivo_fr/youtube_token.json")
-          echo "$TOKEN_JSON" | gh secret set YOUTUBE_TOKEN_FR \
-            -R focoeprosperidadehoje-source/fabrica-canal-fr
-          echo "Secret YOUTUBE_TOKEN_FR atualizado"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Remove temporary SSH key
         if: always()
