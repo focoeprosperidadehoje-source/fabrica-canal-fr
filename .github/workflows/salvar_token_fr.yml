@@ -1,15 +1,15 @@
-name: 🔑 Passo 2 — Salvar Token FR
+name: Salvar Token FR
 
 on:
   workflow_dispatch:
     inputs:
       auth_code:
-        description: 'Código OAuth do Google (da tela de autorização)'
+        description: 'Codigo OAuth do Google (da tela de autorizacao)'
         required: true
 
 jobs:
   salvar-token:
-    name: Troca o código por token e salva no VPS1
+    name: Troca o codigo por token e salva no VPS1
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -23,68 +23,48 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Trocar código por token e salvar no VPS1
+      - name: Trocar codigo por token OAuth e salvar no VPS1
         env:
           AUTH_CODE: ${{ github.event.inputs.auth_code }}
         run: |
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
-            AUTH_CODE="$AUTH_CODE" bash << 'ENDSSH'
-          set -e
+            AUTH_CODE="$AUTH_CODE" "/root/venv_fr/bin/python3 -" << 'PYEOF'
+          import os, sys
+          from pathlib import Path
+          sys.path.insert(0, '/root/venv_fr/lib/python3.12/site-packages')
+          with open('/root/ao_vivo_fr/.env') as f:
+              for line in f:
+                  line = line.strip()
+                  if '=' in line and not line.startswith('#'):
+                      k, v = line.split('=', 1)
+                      os.environ.setdefault(k, v)
+          CLIENT_ID     = os.environ.get('YT_CLIENT_ID', '')
+          CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET', '')
+          AUTH_CODE     = os.environ.get('AUTH_CODE', '').strip()
+          if not CLIENT_ID or not CLIENT_SECRET:
+              print("ERRO: credenciais ausentes no .env FR"); sys.exit(1)
+          if not AUTH_CODE:
+              print("ERRO: AUTH_CODE nao recebido"); sys.exit(1)
+          from google_auth_oauthlib.flow import InstalledAppFlow
+          cfg = {"installed": {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+              "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"],
+              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+              "token_uri": "https://oauth2.googleapis.com/token"}}
+          flow = InstalledAppFlow.from_client_config(cfg, ["https://www.googleapis.com/auth/youtube"])
+          flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+          flow.fetch_token(code=AUTH_CODE)
+          creds = flow.credentials
+          Path('/root/ao_vivo_fr/youtube_token.json').write_text(creds.to_json())
+          print("Token salvo em /root/ao_vivo_fr/youtube_token.json")
+          PYEOF
 
-          /root/venv_fr/bin/python3 << PYEOF
-import os, sys, json
-from pathlib import Path
-
-with open('/root/ao_vivo_fr/.env') as f:
-    for line in f:
-        line = line.strip()
-        if '=' in line and not line.startswith('#'):
-            k, v = line.split('=', 1)
-            os.environ.setdefault(k, v)
-
-CLIENT_ID     = os.environ.get('YT_CLIENT_ID', '')
-CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET', '')
-AUTH_CODE     = os.environ.get('AUTH_CODE', '')
-
-if not CLIENT_ID or not CLIENT_SECRET:
-    print("ERRO: YT_CLIENT_ID ou YT_CLIENT_SECRET ausentes no .env FR")
-    sys.exit(1)
-
-if not AUTH_CODE:
-    print("ERRO: AUTH_CODE nao recebido")
-    sys.exit(1)
-
-sys.path.insert(0, '/root/venv_fr/lib/python3.12/site-packages')
-from google_auth_oauthlib.flow import InstalledAppFlow
-
-client_config = {
-    "installed": {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"],
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-    }
-}
-
-flow = InstalledAppFlow.from_client_config(client_config, ["https://www.googleapis.com/auth/youtube"])
-flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
-flow.fetch_token(code=AUTH_CODE)
-creds = flow.credentials
-
-SAVE_PATH = Path('/root/ao_vivo_fr/youtube_token.json')
-SAVE_PATH.write_text(creds.to_json())
-print(f"Token salvo em {SAVE_PATH}")
-print("Proximo passo: adicionar YOUTUBE_TOKEN_FR ao repo e executar deploy_ao_vivo_fr.yml")
-PYEOF
-          ENDSSH
-
-      - name: Exporta token como secret GitHub
+      - name: Exportar token como secret YOUTUBE_TOKEN_FR
         run: |
           TOKEN_JSON=$(ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
             "cat /root/ao_vivo_fr/youtube_token.json")
-          echo "$TOKEN_JSON" | gh secret set YOUTUBE_TOKEN_FR -R focoeprosperidadehoje-source/fabrica-canal-fr
-          echo "Secret YOUTUBE_TOKEN_FR atualizado no repo FR"
+          echo "$TOKEN_JSON" | gh secret set YOUTUBE_TOKEN_FR \
+            -R focoeprosperidadehoje-source/fabrica-canal-fr
+          echo "Secret YOUTUBE_TOKEN_FR atualizado"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
