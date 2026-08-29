@@ -4,14 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       auth_code:
-        description: 'Codigo OAuth (valor de code= da barra de endereco)'
-        required: true
+        description: 'Codigo OAuth (code= da barra de endereco). Deixe em branco para so exportar secret se token ja existe no VPS.'
+        required: false
 
 jobs:
   salvar-token:
     name: Troca o codigo por token e salva no VPS1
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      secrets: write
 
     steps:
       - name: Configure SSH for VPS1
@@ -23,7 +26,7 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Trocar codigo por token e salvar no VPS1
+      - name: Trocar codigo por token (se necessario) e salvar no VPS1
         env:
           AUTH_CODE: ${{ github.event.inputs.auth_code }}
         run: |
@@ -40,33 +43,37 @@ jobs:
           CLIENT_ID     = os.environ.get('YT_CLIENT_ID', '')
           CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET', '')
           AUTH_CODE     = os.environ.get('AUTH_CODE', '').strip()
+          TOKEN_PATH    = Path('/root/ao_vivo_fr/youtube_token.json')
           if not CLIENT_ID or not CLIENT_SECRET:
-              print("ERRO: credenciais ausentes"); sys.exit(1)
-          if not AUTH_CODE:
-              print("ERRO: AUTH_CODE nao recebido"); sys.exit(1)
-          resp = requests.post('https://oauth2.googleapis.com/token', data={
-              'code': AUTH_CODE,
-              'client_id': CLIENT_ID,
-              'client_secret': CLIENT_SECRET,
-              'redirect_uri': 'http://localhost',
-              'grant_type': 'authorization_code',
-          })
-          if not resp.ok:
-              print("ERRO ao trocar token:", resp.text); sys.exit(1)
-          t = resp.json()
-          creds = {
-              "token": t.get("access_token", ""),
-              "refresh_token": t.get("refresh_token", ""),
-              "token_uri": "https://oauth2.googleapis.com/token",
-              "client_id": CLIENT_ID,
-              "client_secret": CLIENT_SECRET,
-              "scopes": ["https://www.googleapis.com/auth/youtube"],
-              "universe_domain": "googleapis.com",
-              "account": "",
-              "expiry": None,
-          }
-          Path('/root/ao_vivo_fr/youtube_token.json').write_text(json.dumps(creds))
-          print("Token salvo em /root/ao_vivo_fr/youtube_token.json")
+              print("ERRO: credenciais ausentes no .env FR"); sys.exit(1)
+          if TOKEN_PATH.exists() and not AUTH_CODE:
+              print("Token ja existe no VPS1 — pulando troca de codigo")
+          elif not AUTH_CODE:
+              print("ERRO: AUTH_CODE nao recebido e token nao existe"); sys.exit(1)
+          else:
+              resp = requests.post('https://oauth2.googleapis.com/token', data={
+                  'code': AUTH_CODE,
+                  'client_id': CLIENT_ID,
+                  'client_secret': CLIENT_SECRET,
+                  'redirect_uri': 'http://localhost',
+                  'grant_type': 'authorization_code',
+              })
+              if not resp.ok:
+                  print("ERRO ao trocar token:", resp.text); sys.exit(1)
+              t = resp.json()
+              creds = {
+                  "token": t.get("access_token", ""),
+                  "refresh_token": t.get("refresh_token", ""),
+                  "token_uri": "https://oauth2.googleapis.com/token",
+                  "client_id": CLIENT_ID,
+                  "client_secret": CLIENT_SECRET,
+                  "scopes": ["https://www.googleapis.com/auth/youtube"],
+                  "universe_domain": "googleapis.com",
+                  "account": "",
+                  "expiry": None,
+              }
+              TOKEN_PATH.write_text(json.dumps(creds))
+              print("Token salvo em", TOKEN_PATH)
           PYEOF
 
       - name: Exportar token como secret YOUTUBE_TOKEN_FR
