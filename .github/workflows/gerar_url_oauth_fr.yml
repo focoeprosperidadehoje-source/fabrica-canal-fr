@@ -51,11 +51,11 @@ jobs:
               sys.exit(1)
           from google_auth_oauthlib.flow import InstalledAppFlow
           cfg = {"installed": {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
-              "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"],
+              "redirect_uris": ["http://localhost"],
               "auth_uri": "https://accounts.google.com/o/oauth2/auth",
               "token_uri": "https://oauth2.googleapis.com/token"}}
           flow = InstalledAppFlow.from_client_config(cfg, ["https://www.googleapis.com/auth/youtube"])
-          flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+          flow.redirect_uri = "http://localhost"
           url, _ = flow.authorization_url(prompt="consent", access_type="offline")
           print()
           print("=" * 60)
@@ -65,8 +65,9 @@ jobs:
           print("=" * 60)
           print("1. Copie a URL acima e abra no navegador")
           print("2. Login com: canalinteligenciadivinafrance@gmail.com")
-          print("3. Autorize e copie o CODIGO exibido")
-          print("4. Execute workflow 'Salvar Token FR' com esse codigo")
+          print("3. Autorize — o browser vai abrir localhost e dar erro (normal)")
+          print("4. Copie o codigo 'code=XXX' da BARRA DE ENDERECO do browser")
+          print("5. Execute workflow 'Salvar Token FR' com esse codigo")
           print("=" * 60)
           PYEOF
 

@@ -47,11 +47,11 @@ jobs:
               print("ERRO: AUTH_CODE nao recebido"); sys.exit(1)
           from google_auth_oauthlib.flow import InstalledAppFlow
           cfg = {"installed": {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
-              "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"],
+              "redirect_uris": ["http://localhost"],
               "auth_uri": "https://accounts.google.com/o/oauth2/auth",
               "token_uri": "https://oauth2.googleapis.com/token"}}
           flow = InstalledAppFlow.from_client_config(cfg, ["https://www.googleapis.com/auth/youtube"])
-          flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+          flow.redirect_uri = "http://localhost"
           flow.fetch_token(code=AUTH_CODE)
           creds = flow.credentials
           Path('/root/ao_vivo_fr/youtube_token.json').write_text(creds.to_json())
