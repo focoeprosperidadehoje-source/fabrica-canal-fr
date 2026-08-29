@@ -1,0 +1,86 @@
+name: 🎬 Gerador Vídeos Base FR
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'  # Sundays at 3h UTC
+  workflow_dispatch:
+    inputs:
+      num_videos:
+        description: 'Quantos vídeos criar (padrão: 8)'
+        required: false
+        default: '8'
+      drive_folder_id:
+        description: 'ID da pasta Drive (vazio = Nossa Senhora Universal padrão)'
+        required: false
+        default: ''
+      video_prefix:
+        description: 'Prefixo do arquivo de saída'
+        required: false
+        default: 'ourlady'
+
+jobs:
+  gerar_videos:
+    name: Generate base videos FR (Ken Burns + particles) → rsync VPS1
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/ffmpeg
+          key: ffmpeg-static-linux64-n7
+
+      - name: Install FFmpeg (static binary)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          wget -q -O /tmp/ffmpeg.tar.xz \
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+          tar -xf /tmp/ffmpeg.tar.xz --strip-components=2 -C /tmp --wildcards '*/bin/ffmpeg'
+          sudo mv /tmp/ffmpeg /usr/local/bin/ffmpeg
+          sudo chmod +x /usr/local/bin/ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          pip install --quiet \
+            google-api-python-client \
+            google-auth \
+            pillow \
+            numpy
+
+      - name: Generate base videos FR (blur-fill, saint centered)
+        env:
+          GOOGLE_CREDENTIALS_FR: ${{ secrets.GOOGLE_CREDENTIALS_FR }}
+          NUM_VIDEOS:      ${{ github.event.inputs.num_videos    || '8' }}
+          VIDEO_PREFIX:    ${{ github.event.inputs.video_prefix  || 'ourlady' }}
+          DRIVE_FOLDER_ID: ${{ github.event.inputs.drive_folder_id || '1IyWdkNqdKQn8kDX-EWSEjKqOLNPEg6jk' }}
+        run: python3 ao_vivo_fr/gerar_videos_base_fr.py
+
+      - name: List generated videos
+        run: |
+          echo "FR base videos generated:"
+          ls -lh videos_base_fr/ 2>/dev/null || echo "(none)"
+
+      - name: Configure SSH for VPS1
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_VPS_FR }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Send base videos to VPS1 via rsync
+        run: |
+          rsync -avz --progress \
+            -e "ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no" \
+            videos_base_fr/ \
+            root@80.241.213.27:/root/ao_vivo_fr/videos_base/
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key

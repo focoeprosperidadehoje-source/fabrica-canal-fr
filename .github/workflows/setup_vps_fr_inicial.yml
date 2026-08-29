@@ -1,0 +1,76 @@
+name: ⚙️ Setup VPS FR Inicial
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    name: One-time VPS setup for Canal FR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH for VPS1
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_VPS_FR }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Create directories on VPS1
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
+            "mkdir -p /root/ao_vivo_fr/{blocos,suplicas,insumos_h,musicas/manha,musicas/noite,videos_base} && echo 'Directories FR OK'"
+
+      - name: Create venv_fr and install dependencies
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 bash << 'ENDSSH'
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            if ! dpkg -l python3.12-venv 2>/dev/null | grep -q "^ii"; then
+              for i in 1 2 3 4 5; do
+                apt-get update -qq && apt-get install -y python3.12-venv python3-pip -qq 2>/dev/null && break
+                sleep 15
+              done
+            fi
+            python3 -m venv /root/venv_fr
+            /root/venv_fr/bin/pip install --upgrade pip --quiet
+            /root/venv_fr/bin/pip install --quiet \
+              google-genai google-api-python-client google-auth google-auth-oauthlib \
+              pytz edge-tts pillow numpy python-dotenv
+            /root/venv_fr/bin/python3 -c "from google import genai; print('✅ google-genai OK')"
+            echo "✅ venv_fr criado com dependências"
+          ENDSSH
+
+      - name: Copy scripts to VPS1
+        run: |
+          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no \
+            ao_vivo_fr/ao_vivo_fr.py \
+            root@80.241.213.27:/root/ao_vivo_fr/ao_vivo_fr.py
+          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no \
+            ao_vivo_fr/gerar_bloco_live_fr.py \
+            root@80.241.213.27:/root/ao_vivo_fr/gerar_bloco_live_fr.py
+          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no \
+            ao_vivo_fr/gerar_token_fr.py \
+            root@80.241.213.27:/root/ao_vivo_fr/gerar_token_fr.py
+          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no \
+            ao_vivo_fr/ao_vivo_fr.service \
+            root@80.241.213.27:/root/ao_vivo_fr/ao_vivo_fr.service
+
+      - name: Install systemd service (enabled but NOT started — awaits OAuth + stream key)
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 "
+            cp /root/ao_vivo_fr/ao_vivo_fr.service /etc/systemd/system/ao_vivo_fr.service
+            systemctl daemon-reload
+            systemctl enable ao_vivo_fr
+            echo 'Service FR installed and enabled (NOT started — awaits OAuth token + stream key + .env)'
+          "
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key
