@@ -1,0 +1,81 @@
+name: Configurar .env FR no VPS1
+
+on:
+  workflow_dispatch:
+    inputs:
+      stream_key:
+        description: 'STREAM_KEY_H_FR (deixe vazio para manter atual ou definir depois)'
+        required: false
+
+jobs:
+  configurar-env:
+    name: Escreve chaves Gemini no .env FR do VPS1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure SSH for VPS1
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_VPS_FR }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy google_credentials_fr.json no VPS1
+        env:
+          GCP_JSON: ${{ secrets.GOOGLE_CREDENTIALS_FR }}
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
+            GCP_JSON="$GCP_JSON" bash -c 'printf "%s" "$GCP_JSON" > /root/ao_vivo_fr/google_credentials_fr.json && echo "google_credentials_fr.json OK"'
+
+      - name: Escrever variaveis no .env FR
+        env:
+          K_CONTENT_1: ${{ secrets.GEMINI_KEY_LIVE_CONTENT_1_FR }}
+          K_CONTENT_2: ${{ secrets.GEMINI_KEY_LIVE_CONTENT_2_FR }}
+          K_CHAT_1: ${{ secrets.GEMINI_KEY_LIVE_CHAT_1_FR }}
+          K_CHAT_2: ${{ secrets.GEMINI_KEY_LIVE_CHAT_2_FR }}
+          K_CHAT_3: ${{ secrets.GEMINI_KEY_LIVE_CHAT_3_FR }}
+          STREAM_KEY: ${{ github.event.inputs.stream_key }}
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
+            K_CONTENT_1="$K_CONTENT_1" K_CONTENT_2="$K_CONTENT_2" \
+            K_CHAT_1="$K_CHAT_1" K_CHAT_2="$K_CHAT_2" K_CHAT_3="$K_CHAT_3" \
+            STREAM_KEY="$STREAM_KEY" bash << 'ENDSSH'
+          set -e
+          ENV_FILE=/root/ao_vivo_fr/.env
+          touch "$ENV_FILE"
+          update_var() {
+            local key=$1 val=$2
+            if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+            else
+              echo "${key}=${val}" >> "$ENV_FILE"
+            fi
+          }
+          update_var GEMINI_KEY_LIVE_CONTENT_1_FR "$K_CONTENT_1"
+          update_var GEMINI_KEY_LIVE_CONTENT_2_FR "$K_CONTENT_2"
+          update_var GEMINI_KEY_LIVE_CHAT_1_FR    "$K_CHAT_1"
+          update_var GEMINI_KEY_LIVE_CHAT_2_FR    "$K_CHAT_2"
+          update_var GEMINI_KEY_LIVE_CHAT_3_FR    "$K_CHAT_3"
+          update_var INGEST_URL "rtmp://a.rtmp.youtube.com/live2"
+          if [ -n "$STREAM_KEY" ]; then
+            update_var STREAM_KEY_H_FR "$STREAM_KEY"
+            echo "STREAM_KEY_H_FR configurada"
+          else
+            if ! grep -q "^STREAM_KEY_H_FR=" "$ENV_FILE" 2>/dev/null; then
+              echo "STREAM_KEY_H_FR=" >> "$ENV_FILE"
+              echo "STREAM_KEY_H_FR placeholder criado (preencher antes de iniciar servico)"
+            else
+              echo "STREAM_KEY_H_FR ja existe no .env (mantida)"
+            fi
+          fi
+          echo "--- .env FR atualizado ---"
+          grep -v "KEY\|SECRET\|STREAM" "$ENV_FILE" || true
+          echo "(chaves sensiveis omitidas do log)"
+          ENDSSH
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key

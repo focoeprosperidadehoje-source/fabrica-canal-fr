@@ -1,0 +1,39 @@
+name: Exportar Token FR (para setar secret local)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  exportar:
+    name: Le token do VPS1 e salva como artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure SSH for VPS1
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_VPS_FR }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Ler token do VPS1
+        run: |
+          mkdir -p artifact_fr
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
+            "cat /root/ao_vivo_fr/youtube_token.json" > artifact_fr/youtube_token_fr.json
+          echo "Token lido:"
+          python3 -c "import json,sys; d=json.load(open('artifact_fr/youtube_token_fr.json')); print('refresh_token presente:', bool(d.get('refresh_token'))); print('client_id:', d.get('client_id','')[:20]+'...')"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-token-fr
+          path: artifact_fr/youtube_token_fr.json
+          retention-days: 1
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key

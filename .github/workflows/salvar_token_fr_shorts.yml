@@ -1,0 +1,90 @@
+name: Salvar Token FR Shorts
+
+on:
+  workflow_dispatch:
+    inputs:
+      auth_code:
+        description: 'Codigo OAuth para SHORTS (code= da barra de endereco). Gere via "Gerar URL OAuth FR".'
+        required: true
+
+jobs:
+  salvar-token-shorts:
+    name: Troca codigo por token Shorts e salva no VPS1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure SSH for VPS1
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_VPS_FR }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H 80.241.213.27 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Trocar codigo por token Shorts e salvar no VPS1
+        env:
+          AUTH_CODE: ${{ github.event.inputs.auth_code }}
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
+            AUTH_CODE="$AUTH_CODE" "/root/venv_fr/bin/python3 -" << 'PYEOF'
+          import os, sys, json, requests
+          from pathlib import Path
+          with open('/root/ao_vivo_fr/.env') as f:
+              for line in f:
+                  line = line.strip()
+                  if '=' in line and not line.startswith('#'):
+                      k, v = line.split('=', 1)
+                      os.environ.setdefault(k, v)
+          CLIENT_ID     = os.environ.get('YT_CLIENT_ID', '')
+          CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET', '')
+          AUTH_CODE     = os.environ.get('AUTH_CODE', '').strip()
+          TOKEN_PATH    = Path('/root/ao_vivo_fr/youtube_token_shorts.json')
+          if not CLIENT_ID or not CLIENT_SECRET:
+              print("ERRO: credenciais ausentes no .env FR"); sys.exit(1)
+          if not AUTH_CODE:
+              print("ERRO: AUTH_CODE nao recebido"); sys.exit(1)
+          resp = requests.post('https://oauth2.googleapis.com/token', data={
+              'code': AUTH_CODE,
+              'client_id': CLIENT_ID,
+              'client_secret': CLIENT_SECRET,
+              'redirect_uri': 'http://localhost',
+              'grant_type': 'authorization_code',
+          })
+          if not resp.ok:
+              print("ERRO ao trocar token:", resp.text); sys.exit(1)
+          t = resp.json()
+          creds = {
+              "token": t.get("access_token", ""),
+              "refresh_token": t.get("refresh_token", ""),
+              "token_uri": "https://oauth2.googleapis.com/token",
+              "client_id": CLIENT_ID,
+              "client_secret": CLIENT_SECRET,
+              "scopes": ["https://www.googleapis.com/auth/youtube"],
+              "universe_domain": "googleapis.com",
+              "account": "",
+              "expiry": None,
+          }
+          TOKEN_PATH.write_text(json.dumps(creds))
+          print("Token Shorts salvo em", TOKEN_PATH)
+          print("refresh_token presente:", bool(t.get('refresh_token')))
+          PYEOF
+
+      - name: Ler token Shorts do VPS1 (para artifact)
+        run: |
+          mkdir -p artifact_shorts
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no root@80.241.213.27 \
+            "cat /root/ao_vivo_fr/youtube_token_shorts.json" > artifact_shorts/youtube_token_fr_shorts.json
+          python3 -c "import json; d=json.load(open('artifact_shorts/youtube_token_fr_shorts.json')); print('refresh_token:', bool(d.get('refresh_token')))"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-token-fr-shorts
+          path: artifact_shorts/youtube_token_fr_shorts.json
+          retention-days: 1
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key
