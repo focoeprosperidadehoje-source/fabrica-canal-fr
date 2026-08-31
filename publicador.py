@@ -24,7 +24,7 @@ aba_principal = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").w
 try: configs = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").worksheet("Configuracoes").get_all_records()
 except: configs = []
 
-creds_yt = YTCredentials.from_authorized_user_info(json.loads(YT_TOKEN_JSON))
+creds_yt = YTCredentials.from_authorized_user_info(json.loads(YT_TOKEN_JSON.lstrip('﻿')))
 if creds_yt and creds_yt.expired and creds_yt.refresh_token: creds_yt.refresh(Request())
 youtube = build('youtube', 'v3', credentials=creds_yt)
 drive_service = build_drive('drive', 'v3', credentials=creds_sheets)
