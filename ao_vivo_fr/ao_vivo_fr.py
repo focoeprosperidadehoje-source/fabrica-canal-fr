@@ -194,6 +194,93 @@ MIN_BLOCO_BYTES = 10 * 1024 * 1024
 
 _stream_id_cache = {"id": None}
 
+# ── Playlists temáticas de VOD ───────────────────────────────────────────
+PLAYLISTS_TEMATICAS_FILE = BASE_DIR / "playlists_tematicas.json"
+_NOMES_PLAYLIST_TEMATICA = {
+    0: "Notre-Dame — Protection et Guerre Spirituelle",
+    1: "Notre-Dame — Libération des Addictions",
+    2: "Notre-Dame — Restauration Familiale",
+    3: "Notre-Dame — Providence et Portes Ouvertes",
+    4: "Notre-Dame — Guérison et Miséricorde",
+    5: "Notre-Dame — Le Manteau Sacré",
+    6: "Notre-Dame — Miracles et Gratitude",
+}
+_cache_playlists_tematicas: dict = {}
+
+def _garantir_playlists_tematicas(yt) -> dict:
+    global _cache_playlists_tematicas
+    if _cache_playlists_tematicas:
+        return _cache_playlists_tematicas
+    if PLAYLISTS_TEMATICAS_FILE.exists():
+        try:
+            cached = json.loads(PLAYLISTS_TEMATICAS_FILE.read_text())
+            if len(cached) == 7:
+                _cache_playlists_tematicas = cached
+                return cached
+        except Exception:
+            pass
+    existentes = {}
+    token = None
+    while True:
+        resp = yt.playlists().list(part="snippet", mine=True, maxResults=50, pageToken=token).execute()
+        for p in resp.get("items", []):
+            existentes[p["snippet"]["title"]] = p["id"]
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    ids = {}
+    for weekday, nome in _NOMES_PLAYLIST_TEMATICA.items():
+        if nome in existentes:
+            ids[str(weekday)] = existentes[nome]
+            log.info(f"Playlist thématique trouvée: {nome} → {existentes[nome]}")
+        else:
+            try:
+                r = yt.playlists().insert(
+                    part="snippet,status",
+                    body={
+                        "snippet": {"title": nome, "description": f"Prières en direct et VODs — {nome}", "defaultLanguage": "fr"},
+                        "status": {"privacyStatus": "public"},
+                    }
+                ).execute()
+                ids[str(weekday)] = r["id"]
+                log.info(f"Playlist thématique CRÉÉE: {nome} → {r['id']}")
+            except Exception as e:
+                log.warning(f"Créer playlist '{nome}': {e}")
+    PLAYLISTS_TEMATICAS_FILE.write_text(json.dumps(ids))
+    _cache_playlists_tematicas = ids
+    return ids
+
+def _renomear_vod_e_classificar(bid: str):
+    time.sleep(180)
+    try:
+        yt2 = get_youtube()
+    except Exception as e:
+        log.warning(f"_renomear_vod FR: get_youtube échoué: {e}")
+        return
+    now = datetime.now(FUSO)
+    weekday = now.weekday()
+    titulo_base = re.sub(r"[🔴🟢🔵]|\s*EN DIRECT", "", TITULOS_LIVE[weekday]).strip()
+    titulo_vod = f"{titulo_base} · {now.strftime('%d/%m %Hh')}"[:100]
+    try:
+        yt2.videos().update(
+            part="snippet",
+            body={"id": bid, "snippet": {"title": titulo_vod, "categoryId": "22", "description": DESCRICAO_LIVE}},
+        ).execute()
+        log.info(f"VOD {bid} renommé: {titulo_vod}")
+    except Exception as e:
+        log.warning(f"Renommer VOD {bid}: {e}")
+    try:
+        pls = _garantir_playlists_tematicas(yt2)
+        pid = pls.get(str(weekday))
+        if pid:
+            yt2.playlistItems().insert(
+                part="snippet",
+                body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": bid}}},
+            ).execute()
+            log.info(f"VOD {bid} → playlist thématique weekday={weekday}: {pid}")
+    except Exception as e:
+        log.warning(f"Playlist thématique VOD {bid}: {e}")
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # LITURGICAL CALENDAR
@@ -723,6 +810,7 @@ def _finalizar_broadcast(yt, bid: str):
         log.info(f"Broadcast {bid} ended — VOD processing.")
     except Exception as e:
         log.warning(f"finalizar FR {bid}: transition ({e})")
+    threading.Thread(target=_renomear_vod_e_classificar, args=(bid,), daemon=True).start()
     if PLAYLIST_LIVES:
         for tentativa in range(1, 4):
             try:
