@@ -171,7 +171,10 @@ for index, linha in enumerate(dados, start=2):
                 try:
                     if ID_PLAYLIST_SHORTS_FR and not ID_PLAYLIST_SHORTS_FR.startswith("PLACEHOLDER"): youtube.playlistItems().insert(part="snippet", body={"snippet": {"playlistId": ID_PLAYLIST_SHORTS_FR, "resourceId": {"kind": "youtube#video", "videoId": video_id}}}).execute()
                 except Exception as e: print(f"   ⚠️ Avertissement: playlist non mise à jour: {e}")
-                aba_shorts.update_cell(index, col_status, 'Published')
+                try:
+                    aba_shorts.update_cell(index, col_status, 'Published')
+                    print(f"   📋 Feuille mise à jour. Ligne {index} terminée.")
+                except Exception as e: print(f"   ⚠️ Échec de mise à jour: {e}")
                 break
             except Exception as e:
                 print(f"   ❌ Erreur YouTube (Tentative {tentativa+1}/3): {e}")

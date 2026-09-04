@@ -2,10 +2,8 @@ name: 2. Prensa Longos (Matrix FR)
 
 on:
   schedule:
-    - cron: '30 8 * * *'   # 09:30 Paris time (UTC+1) ou 10:30 (UTC+2 verão)
-    - cron: '30 9 * * *'
-    - cron: '30 20 * * *'  # 21:30 Paris / 22:30 verão
-    - cron: '30 21 * * *'
+    - cron: '30 8 * * *'   # 10:30 Paris time (UTC+2 verão)
+    - cron: '30 20 * * *'  # 22:30 Paris (UTC+2 verão)
   workflow_dispatch:
 
 jobs:
