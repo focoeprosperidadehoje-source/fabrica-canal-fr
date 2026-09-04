@@ -147,7 +147,7 @@ for index, linha in enumerate(dados, start=2):
         tags_limpas = re.sub(r'[^a-zA-ZÀ-ÿ0-9 ,]', '', tags_str)
         tags_lista = [t.strip()[:30] for t in tags_limpas.split(',') if t.strip()][:15]
 
-        texto_convite = f"\n\n🙏 Pour la prière complète et profonde, visitez notre chaîne. Nous publions des prières puissantes chaque jour.\n\nNotre playlist: https://www.youtube.com/playlist?list=PLCKFHOkKiqGg"
+        texto_convite = f"\n\n🔴 EN DIRECT — 24H AVEC NOTRE-DAME 🙏 Rejoignez-nous: https://youtube.com/channel/UC7dZrYzY22dO-h6RfRN1bsw/live\n\nPour la prière complète et profonde, visitez notre chaîne. Nous publions des prières puissantes chaque jour.\n\nNotre playlist: https://www.youtube.com/playlist?list=PLCKFHOkKiqGg"
 
         try:
             agora_paris = datetime.datetime.now(pytz.timezone('Europe/Paris'))
