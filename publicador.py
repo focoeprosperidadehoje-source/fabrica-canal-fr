@@ -21,7 +21,7 @@ creds_sheets = Credentials.from_service_account_info(credenciais_dict, scopes=['
 gc = gspread.authorize(creds_sheets)
 
 aba_principal = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").worksheet("FR")
-try: configs = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").worksheet("Configuracoes").get_all_records()
+try: configs = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU").worksheet("Configuracoes").get_all_records(expected_headers=[])
 except: configs = []
 
 creds_yt = YTCredentials.from_authorized_user_info(json.loads(YT_TOKEN_JSON.lstrip('﻿')))
@@ -179,7 +179,7 @@ def criar_thumbnail(img_path, texto_curto, horario, persona, caminho_saida):
     img.save(caminho_saida)
     return caminho_saida
 
-dados = aba_principal.get_all_records()
+dados = aba_principal.get_all_records(expected_headers=[])
 col_status = aba_principal.row_values(1).index('Status') + 1
 
 for index, linha in enumerate(dados, start=2):

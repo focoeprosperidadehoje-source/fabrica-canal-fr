@@ -78,7 +78,7 @@ def formatar_vtt(caminho_vtt):
             elif l.strip() == '' or l.startswith('WEBVTT'): f.write(l)
             else: f.write(textwrap.fill(l.strip(), width=30) + '\n')
 
-dados = aba_shorts.get_all_records()
+dados = aba_shorts.get_all_records(expected_headers=[])
 col_status = aba_shorts.row_values(1).index('Status') + 1
 
 for index, linha in enumerate(dados, start=2):
