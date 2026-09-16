@@ -1,0 +1,37 @@
+name: 🔧 Corrigir Headers FR+IT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  corrigir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3'
+      - run: pip install gspread google-auth
+      - env:
+          GOOGLE_CREDENTIALS_FR: ${{ secrets.GOOGLE_CREDENTIALS_FR }}
+        run: |
+          python - <<'PYEOF'
+          import os, json, gspread
+          from google.oauth2.service_account import Credentials
+
+          creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_FR"])
+          creds = Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets'])
+          gc = gspread.authorize(creds)
+          planilha = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU")
+
+          HEADER_CORRETO = ['Data', 'Horario', 'Status', 'Personagem', 'Idioma', 'Tema', 'Titulo', 'Roteiro', 'Tags', 'Descricao', 'ThumbStatus', 'Texto_Thumb']
+
+          for nome_aba in ["FR", "FR_SHORTS", "IT", "IT_SHORTS"]:
+              aba = planilha.worksheet(nome_aba)
+              header_atual = aba.row_values(1)
+              print(f"\n=== {nome_aba} ===")
+              print(f"  Header atual:   {header_atual}")
+              print(f"  Header correto: {HEADER_CORRETO}")
+              aba.update('A1', [HEADER_CORRETO])
+              print(f"  ✅ Header atualizado!")
+          PYEOF
