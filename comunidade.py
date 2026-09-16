@@ -23,7 +23,7 @@ def obter_modelo_lite():
 
 modelo = obter_modelo_lite()
 
-creds_yt = YTCredentials.from_authorized_user_info(json.loads(YT_TOKEN_JSON))
+creds_yt = YTCredentials.from_authorized_user_info(json.loads(YT_TOKEN_JSON.lstrip('﻿')))
 if creds_yt and creds_yt.expired and creds_yt.refresh_token: creds_yt.refresh(Request())
 youtube = build('youtube', 'v3', credentials=creds_yt)
 
