@@ -1,0 +1,46 @@
+name: 🔍 Diagnóstico Planilha FR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3'
+      - run: pip install gspread google-auth
+      - env:
+          GOOGLE_CREDENTIALS_FR: ${{ secrets.GOOGLE_CREDENTIALS_FR }}
+        run: |
+          python - <<'PYEOF'
+          import os, json, gspread
+          from google.oauth2.service_account import Credentials
+
+          creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_FR"])
+          creds = Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets'])
+          gc = gspread.authorize(creds)
+          planilha = gc.open_by_key("1KgIjWrLUVlllhlZB1R9fkHGxxZlLsax1aOVGZrYwgnU")
+
+          for nome_aba in ["FR", "FR_SHORTS"]:
+              aba = planilha.worksheet(nome_aba)
+              headers = aba.row_values(1)
+              print(f"\n=== {nome_aba} === Headers: {headers}")
+              todas = aba.get_all_values()
+              print(f"Total rows (incl header): {len(todas)}")
+              # Print last 10 rows
+              print("Últimas 10 linhas:")
+              for i, row in enumerate(todas[-10:], start=max(1, len(todas)-9)):
+                  print(f"  Row {i}: {row[:5]}")  # Only first 5 cols
+              # Count by status
+              if len(todas) > 1:
+                  try:
+                      status_col = headers.index('Status')
+                      from collections import Counter
+                      statuses = Counter(r[status_col] if len(r) > status_col else '' for r in todas[1:])
+                      print(f"Status counts: {dict(statuses)}")
+                  except ValueError:
+                      print(f"'Status' NOT FOUND in headers! Available: {headers}")
+          PYEOF
