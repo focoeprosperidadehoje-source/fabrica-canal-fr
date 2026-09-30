@@ -109,7 +109,7 @@ for data_alvo, grade_para_processar in gaps:
         {contexto_eco}
 
         STRUCTURE DU SCRIPT OBLIGATOIRE (BOUCLE PARFAITE):
-        1. HOOK (Début): La première phrase de la vidéo. OBLIGATOIRE de commencer par des points de suspension en minuscules ("..."). C'est le COMPLÉMENT SYNTAXIQUE de la phrase finale — ensemble elles forment une phrase unique, continue et complète.
+        1. HOOK (Début): La première phrase de la vidéo. OBLIGATOIRE de commencer par des points de suspension en minuscules ("..."). C'est le COMPLÉMENT SYNTAXIQUE de la phrase finale — ensemble elles forment une phrase unique, continue et complète. RÈGLE DE RÉTENTION (obligatoire) : dans les 10 premiers mots, la phrase d'ouverture parle DIRECTEMENT à la douleur de celui qui regarde, à la deuxième personne et liée au thème du jour (ex. : "...si quelqu'un chez toi est malade, cette prière est pour toi."). Interdit de commencer par une salutation, un contexte ou une phrase générique — le spectateur décide en 2 secondes s'il reste.
         2. PRIÈRE: Écris EXACTEMENT cette prière: "{oracao_padrao}"
         3. PHRASE DE BOUCLE (Fin): La dernière phrase de la vidéo. OBLIGATOIRE de se terminer par des points de suspension ("..."). Elle doit être SYNTAXIQUEMENT INCOMPLÈTE — une proposition ouverte dont le complément naturel est exactement la phrase d'ouverture.
 

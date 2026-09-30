@@ -267,12 +267,12 @@ for video in grade_para_processar:
 
     RÈGLES DE RÉTENTION ET COPYWRITING (TRÈS IMPORTANT):
     1. FORMULE DU TITRE: Suis EXACTEMENT le format ci-dessous. Pour Notre-Dame: OBLIGATOIRE de commencer par 'Notre-Dame' ou 'la Vierge Marie'. Il est STRICTEMENT INTERDIT de commencer par le mot 'Prière'.
-    2. FORMULE THUMB: Maximum 4 mots. DOIT être un déclencheur d'urgence connecté au thème (Ex: "MIRACLE URGENT AUJOURD'HUI", "SAUVEZ VOTRE FAMILLE", "FIN DE L'ANXIÉTÉ").
+    2. FORMULE THUMB (MODÈLE CHAMPION — données réelles de CTR) : 2 ou 3 mots = RÉSULTAT CONCRET + mot d'urgence à la fin (AUJOURD'HUI / MAINTENANT). Ex : "MIRACLE AUJOURD'HUI", "PORTES OUVERTES MAINTENANT", "GUÉRISON AUJOURD'HUI", "FAMILLE RESTAURÉE". INTERDIT : mots de calme/abstraits seuls sans résultat (ex. "PAIX PROFONDE", "NUIT SEREINE") — test réel : "MIRACLE TODAY" 4,7 % de CTR vs "DEEP PEACE TONIGHT" 1,6 %.
     3. LA RÈGLE DES 15 SECONDES (HOOK 3A): Le début du script DOIT avoir 3 blocs rapides:
        - Attention (0-5s): Une AFFIRMATION EMPATHIQUE sur la douleur du croyant. (INTERDIT d'utiliser des questions directes).
        - Cadre sensoriel (5-10s): Connecte la douleur avec la scène de {periodo}.
        - Autorité/Agenda (10-15s): Dis que {persona_prompt} a une parole de libération et demande de rester jusqu'à la fin.
-    4. CTA IMMÉDIAT: {cta_comentarios}
+    4. CTA IMMÉDIAT: {cta_comentarios} Dans la CONCLUSION, demande aussi naturellement au fidèle d'ENVOYER cette prière à quelqu'un qui en a besoin (ex. : "Si quelqu'un vous est venu à l'esprit pendant cette prière, envoyez-la-lui maintenant."). Le partage est la demande principale de la fin.
     5. RÉINITIALISATION DE L'ATTENTION (MI-VIDÉO): Exactement au milieu du script, insère une phrase parlée pour reconnecter l'auditeur.
     6. CROCHETS DE RÉTENTION INVISIBLES: Toutes les 300 à 400 mots, incorpore organiquement — sans que le croyant perçoive la technique — l'un des suivants: (a) ANTICIPATION; (b) RÉVÉLATION PARTIELLE; (c) VALIDATION ÉMOTIONNELLE; (d) CHANGEMENT DE BLOC. Les crochets doivent être invisibles.
 
