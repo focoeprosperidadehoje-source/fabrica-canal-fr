@@ -167,11 +167,6 @@ TITULOS_LIVE = {
 DESCRICAO_LIVE = (
     "🙏 Diffusion continue de prière avec la Vierge Marie — Notre-Dame de Lourdes.\n\n"
     "Laissez votre demande de prière dans les commentaires — votre Mère du Ciel vous écoute.\n\n"
-    "💝 Soutenez cette mission de prière continue :\n"
-    "👉 https://www.paypal.com/donate/?hosted_button_id=P5E5EBVM2HWGS\n\n"
-    "📿 Articles bénis :\n"
-    "• Chapelet de Notre-Dame → https://amzn.to/40ewSZU\n"
-    "• Bible Grand Format → https://amzn.to/4afDGLy\n\n"
     "🔔 Abonnez-vous · 👍 Aimez · ➡️ Visitez la chaîne"
 )
 
