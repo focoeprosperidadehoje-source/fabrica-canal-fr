@@ -12,8 +12,8 @@ jobs:
     timeout-minutes: 300
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-      YOUTUBE_TOKEN_JSON: ${ secrets.YOUTUBE_TOKEN_FR }
-      GOOGLE_CREDENTIALS: ${ secrets.GOOGLE_CREDENTIALS }
+      YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_FR }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_FR }}
     steps:
       - uses: actions/checkout@v4
       - name: Cache FFmpeg
